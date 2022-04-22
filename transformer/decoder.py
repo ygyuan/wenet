@@ -63,7 +63,7 @@ class TransformerDecoder(torch.nn.Module):
             raise ValueError(f"only 'embed' is supported: {input_layer}")
 
         self.normalize_before = normalize_before
-        self.after_norm = torch.nn.LayerNorm(attention_dim, eps=1e-12)
+        self.after_norm = torch.nn.LayerNorm(attention_dim, eps=1e-5)
         self.use_output_layer = use_output_layer
         self.output_layer = torch.nn.Linear(attention_dim, vocab_size)
         self.num_blocks = num_blocks
@@ -88,7 +88,7 @@ class TransformerDecoder(torch.nn.Module):
         memory_mask: torch.Tensor,
         ys_in_pad: torch.Tensor,
         ys_in_lens: torch.Tensor,
-        r_ys_in_pad: Optional[torch.Tensor] = None,
+        r_ys_in_pad: torch.Tensor = torch.empty(0),
         reverse_weight: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward decoder.
@@ -109,9 +109,10 @@ class TransformerDecoder(torch.nn.Module):
                 olens: (batch, )
         """
         tgt = ys_in_pad
-
+        maxlen = tgt.size(1)
         # tgt_mask: (B, 1, L)
-        tgt_mask = (~make_pad_mask(ys_in_lens).unsqueeze(1)).to(tgt.device)
+        tgt_mask = ~make_pad_mask(ys_in_lens, maxlen).unsqueeze(1)
+        tgt_mask = tgt_mask.to(tgt.device)
         # m: (1, L, L)
         m = subsequent_mask(tgt_mask.size(-1),
                             device=tgt_mask.device).unsqueeze(0)

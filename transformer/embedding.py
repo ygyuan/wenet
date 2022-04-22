@@ -56,11 +56,9 @@ class PositionalEncoding(torch.nn.Module):
             torch.Tensor: Encoded tensor. Its shape is (batch, time, ...)
             torch.Tensor: for compatibility to RelPositionalEncoding
         """
-        #assert offset + x.size(1) < self.max_len
+        assert offset + x.size(1) < self.max_len
         self.pe = self.pe.to(x.device)
         pos_emb = self.pe[:, offset:offset + x.size(1)]
-        #index = torch.arange(offset, offset + x.size(1))                        
-        #pos_emb = self.pe.index_select(1, index)
         x = x * self.xscale + pos_emb
         return self.dropout(x), self.dropout(pos_emb)
 
@@ -106,12 +104,10 @@ class RelPositionalEncoding(PositionalEncoding):
             torch.Tensor: Encoded tensor (batch, time, `*`).
             torch.Tensor: Positional embedding tensor (1, time, `*`).
         """
-        #assert offset + x.size(1) < self.max_len
+        assert offset + x.size(1) < self.max_len
         self.pe = self.pe.to(x.device)
         x = x * self.xscale
         pos_emb = self.pe[:, offset:offset + x.size(1)]
-        #index = torch.arange(offset, offset + x.size(1))                        
-        #pos_emb = self.pe.index_select(1, index)
         return self.dropout(x), self.dropout(pos_emb)
 
 

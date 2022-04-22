@@ -1,4 +1,4 @@
-# Copyright 2019 Mobvoi Inc. All Rights Reserved.
+# Copyright 2020 Mobvoi Inc. All Rights Reserved.
 # Author: di.wu@mobvoi.com (DI WU)
 import os
 import argparse
@@ -8,7 +8,8 @@ import yaml
 import numpy as np
 import torch
 
-if __name__ == '__main__':
+
+def get_args():
     parser = argparse.ArgumentParser(description='average model')
     parser.add_argument('--dst_model', required=True, help='averaged model')
     parser.add_argument('--src_path',
@@ -26,12 +27,17 @@ if __name__ == '__main__':
                         type=int,
                         help='min epoch used for averaging model')
     parser.add_argument('--max_epoch',
-                        default=65536,  # Big enough
+                        default=65536,
                         type=int,
                         help='max epoch used for averaging model')
 
     args = parser.parse_args()
     print(args)
+    return args
+
+
+def main():
+    args = get_args()
     checkpoints = []
     val_scores = []
     if args.val_best:
@@ -54,7 +60,7 @@ if __name__ == '__main__':
             for epoch in sorted_val_scores[:args.num, 0]
         ]
     else:
-        path_list = glob.glob('{}/[!avg][!final]*.pt'.format(args.src_path))
+        path_list = glob.glob('{}/[0-9]*.pt'.format(args.src_path))
         path_list = sorted(path_list, key=os.path.getmtime)
         path_list = path_list[-args.num:]
     print(path_list)
@@ -76,3 +82,7 @@ if __name__ == '__main__':
             avg[k] = torch.true_divide(avg[k], num)
     print('Saving to {}'.format(args.dst_model))
     torch.save(avg, args.dst_model)
+
+
+if __name__ == '__main__':
+    main()

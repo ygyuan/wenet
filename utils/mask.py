@@ -5,7 +5,7 @@
 
 import torch
 
-
+'''
 def subsequent_mask(
         size: int,
         device: torch.device = torch.device("cpu"),
@@ -36,7 +36,43 @@ def subsequent_mask(
          [1, 1, 1]]
     """
     ret = torch.ones(size, size, device=device, dtype=torch.bool)
-    return torch.tril(ret, out=ret)
+    return torch.tril(ret)
+'''
+
+def subsequent_mask(
+        size: int,
+        device: torch.device = torch.device("cpu"),
+) -> torch.Tensor:
+    """Create mask for subsequent steps (size, size).
+
+    This mask is used only in decoder which works in an auto-regressive mode.
+    This means the current step could only do attention with its left steps.
+
+    In encoder, fully attention is used when streaming is not necessary and
+    the sequence is not long. In this  case, no attention mask is needed.
+
+    When streaming is need, chunk-based attention is used in encoder. See
+    subsequent_chunk_mask for the chunk-based attention mask.
+
+    Args:
+        size (int): size of mask
+        str device (str): "cpu" or "cuda" or torch.Tensor.device
+        dtype (torch.device): result dtype
+
+    Returns:
+        torch.Tensor: mask
+
+    Examples:
+        >>> subsequent_mask(3)
+        [[1, 0, 0],
+         [1, 1, 0],
+         [1, 1, 1]]
+    """
+    arange = torch.arange(size, device=device)
+    mask = arange.expand(size, size)
+    arange = arange.unsqueeze(-1)
+    mask = mask <= arange
+    return mask
 
 
 def subsequent_chunk_mask(
@@ -145,7 +181,7 @@ def add_optional_chunk_mask(xs: torch.Tensor, masks: torch.Tensor,
     return chunk_masks
 
 
-def make_pad_mask(lengths: torch.Tensor) -> torch.Tensor:
+def make_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:
     """Make mask tensor containing indices of padded part.
 
     See description of make_non_pad_mask.
@@ -162,8 +198,8 @@ def make_pad_mask(lengths: torch.Tensor) -> torch.Tensor:
                  [0, 0, 0, 1, 1],
                  [0, 0, 1, 1, 1]]
     """
-    batch_size = int(lengths.size(0))
-    max_len = int(lengths.max().item())
+    batch_size = lengths.size(0)
+    max_len = max_len if max_len > 0 else lengths.max().item()
     seq_range = torch.arange(0,
                              max_len,
                              dtype=torch.int64,
@@ -249,29 +285,3 @@ def mask_finished_preds(pred: torch.Tensor, flag: torch.Tensor,
     beam_size = pred.size(-1)
     finished = flag.repeat([1, beam_size])
     return pred.masked_fill_(finished, eos)
-
-def make_pad_mask_bucket(lengths: torch.Tensor, maxlen: int) -> torch.Tensor:   
-    """Make mask tensor containing indices of padded part.                      
-                                                                                
-    Args:                                                                       
-        lengths (torch.Tensor): Batch of lengths (B,).                          
-    Returns:                                                                    
-        torch.Tensor: Mask tensor containing indices of padded part.            
-                                                                                
-    Examples:                                                                   
-        >>> lengths = [5, 3, 2]                                                 
-        >>> make_pad_mask(lengths)                                              
-        masks = [[0, 0, 0, 0 ,0],                                               
-                 [0, 0, 0, 1, 1],                                               
-                 [0, 0, 1, 1, 1]]                                               
-    """                                                                         
-    bs = int(lengths.size(0))                                                   
-    #maxlen = int(lengths.max().item())                                         
-    seq_range = torch.arange(0,                                                 
-                             maxlen,                                            
-                             dtype=torch.int64,                                 
-                             device=lengths.device)                             
-    seq_range_expand = seq_range.unsqueeze(0).expand(bs, maxlen)                
-    seq_length_expand = lengths.unsqueeze(-1)                                   
-    mask = seq_range_expand >= seq_length_expand                                
-    return mask

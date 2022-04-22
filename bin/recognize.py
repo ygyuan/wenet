@@ -27,10 +27,10 @@ from torch.utils.data import DataLoader
 from wenet.dataset.dataset import Dataset
 from wenet.transformer.asr_model import init_asr_model
 from wenet.utils.checkpoint import load_checkpoint
-from wenet.utils.file_utils import read_symbol_table
+from wenet.utils.file_utils import read_symbol_table, read_non_lang_symbols
 from wenet.utils.config import override_config
 
-if __name__ == '__main__':
+def get_args():
     parser = argparse.ArgumentParser(description='recognize with your model')
     parser.add_argument('--config', required=True, help='config file')
     parser.add_argument('--test_data', required=True, help='test data file')
@@ -44,6 +44,8 @@ if __name__ == '__main__':
                         help='gpu id for this rank, -1 for cpu')
     parser.add_argument('--checkpoint', required=True, help='checkpoint model')
     parser.add_argument('--dict', required=True, help='dict file')
+    parser.add_argument("--non_lang_syms",
+                        help="non-linguistic symbol file. One symbol per line.")
     parser.add_argument('--beam_size',
                         type=int,
                         default=10,
@@ -95,9 +97,18 @@ if __name__ == '__main__':
                         action='append',
                         default=[],
                         help="override yaml config")
+    parser.add_argument('--connect_symbol',
+                        default='',
+                        type=str,
+                        help='used to connect the output characters')
 
     args = parser.parse_args()
     print(args)
+    return args
+
+
+def main():
+    args = get_args()
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
     os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
@@ -125,16 +136,23 @@ if __name__ == '__main__':
     test_conf['filter_conf']['min_output_input_ratio'] = 0
     test_conf['speed_perturb'] = False
     test_conf['spec_aug'] = False
+    test_conf['spec_sub'] = False
     test_conf['shuffle'] = False
     test_conf['sort'] = False
-    test_conf['fbank_conf']['dither'] = 0.0
+    if 'fbank_conf' in test_conf:
+        test_conf['fbank_conf']['dither'] = 0.0
+    elif 'mfcc_conf' in test_conf:
+        test_conf['mfcc_conf']['dither'] = 0.0
+    test_conf['batch_conf']['batch_type'] = "static"
     test_conf['batch_conf']['batch_size'] = args.batch_size
+    non_lang_syms = read_non_lang_symbols(args.non_lang_syms)
 
     test_dataset = Dataset(args.data_type,
                            args.test_data,
                            symbol_table,
                            test_conf,
                            args.bpe_model,
+                           non_lang_syms,
                            partition=False)
 
     test_data_loader = DataLoader(test_dataset, batch_size=None, num_workers=0)
@@ -143,12 +161,7 @@ if __name__ == '__main__':
     model = init_asr_model(configs)
 
     # Load dict
-    char_dict = {}
-    with open(args.dict, 'r') as fin:
-        for line in fin:
-            arr = line.strip().split()
-            assert len(arr) == 2
-            char_dict[int(arr[1])] = arr[0]
+    char_dict = {v: k for k, v in symbol_table.items()}
     eos = len(char_dict) - 1
 
     load_checkpoint(model, args.checkpoint)
@@ -206,10 +219,14 @@ if __name__ == '__main__':
                     reverse_weight=args.reverse_weight)
                 hyps = [hyp]
             for i, key in enumerate(keys):
-                content = ''
+                content = []
                 for w in hyps[i]:
                     if w == eos:
                         break
-                    content += char_dict[w]
-                logging.info('{} {}'.format(key, content))
-                fout.write('{} {}\n'.format(key, content))
+                    content.append(char_dict[w])
+                logging.info('{} {}'.format(key, args.connect_symbol.join(content)))
+                fout.write('{} {}\n'.format(key, args.connect_symbol.join(content)))
+
+
+if __name__ == '__main__':
+    main()
