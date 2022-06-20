@@ -25,6 +25,20 @@ def load_checkpoint(model: torch.nn.Module, path: str) -> dict:
             configs = yaml.load(fin, Loader=yaml.FullLoader)
     return configs
 
+def load_checkpoint_new(model: torch.nn.Module, path: str) -> dict:
+    #if torch.cuda.is_available():
+    #    logging.info('Checkpoint: loading from checkpoint %s for GPU' % path)
+    #    checkpoint = torch.load(path)
+    #else:
+    logging.info('Checkpoint: loading from checkpoint %s for CPU' % path)
+    #    checkpoint = torch.load(path, map_location='cpu')
+    model.load_state_dict(torch.load(path, map_location='cpu'), strict=False)
+    info_path = re.sub('.pt$', '.yaml', path)
+    configs = {}
+    if os.path.exists(info_path):
+        with open(info_path, 'r') as fin:
+            configs = yaml.load(fin, Loader=yaml.FullLoader)
+    return configs
 
 def save_checkpoint(model: torch.nn.Module, path: str, infos=None):
     '''

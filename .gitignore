@@ -1,0 +1,63 @@
+# Object files.
+*.slo
+*.lo
+*.o
+*.obj
+*.pyc
+
+# Profiling files and core dumps.
+*.nvprof
+core
+
+# Compiled dynamic libraries.
+#*.so
+#*.dylib
+#*.dll
+
+# Compiled static libraries.
+#*.lai
+#*.la
+#*.a
+#*.lib
+
+# Test log files.
+*.testlog
+*.log
+
+# Emacs autosave and backup files.
+[#]*[#]
+.[#]*
+*~
+
+# [ecg]tag files.
+TAGS
+tags
+GTAGS
+GRTAGS
+GPATH
+GSYMS
+
+# Python compiled bytecode files.
+*.pyc
+
+# Make dependencies.
+.depend.mk
+
+# Some weird thing that macOS creates.
+*.dSYM
+
+# Windows executable, symbol and some weird files.
+*.exe
+*.pdb
+*.exp
+*.manifest
+/kaldiwin_vs*
+.vscode
+
+
+# /egs/
+#/bin/linux/exp
+#/bin/linux/log
+#/bin/linux/temp
+/build
+#/lib

@@ -28,6 +28,8 @@ class CTC(torch.nn.Module):
         reduction_type = "sum" if reduce else "none"
         self.ctc_loss = torch.nn.CTCLoss(reduction=reduction_type)
 
+        #self.softmax = F.softmax(dim=2)
+
     def forward(self, hs_pad: torch.Tensor, hlens: torch.Tensor,
                 ys_pad: torch.Tensor, ys_lens: torch.Tensor) -> torch.Tensor:
         """Calculate CTC loss.
@@ -39,22 +41,37 @@ class CTC(torch.nn.Module):
             ys_lens: batch of lengths of character sequence (B)
         """
         # hs_pad: (B, L, NProj) -> ys_hat: (B, L, Nvocab)
-        ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))
+        #ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))
         # ys_hat: (B, L, D) -> (L, B, D)
-        ys_hat = ys_hat.transpose(0, 1)
-        ys_hat = ys_hat.log_softmax(2)
+        #ys_hat = ys_hat.transpose(0, 1)
+        #ys_hat = ys_hat.log_softmax(2)
+ 
+        ys_hat = self.selfcondition_forward(hs_pad).transpose(0, 1) 
         loss = self.ctc_loss(ys_hat, ys_pad, hlens, ys_lens)
         # Batch-size average
         loss = loss / ys_hat.size(1)
         return loss
 
-    def softmax(self, hs_pad: torch.Tensor) -> torch.Tensor:
-        """log_softmax of frame activations
+    def selfcondition_forward(self, hs_pad: torch.Tensor) -> torch.Tensor:      
+        """Calculate CTC loss.                                                  
+                                                                                
+        Args:                                                                   
+            hs_pad: batch of padded hidden state sequences (B, Tmax, D)         
+        """                                                                     
+        # hs_pad: (B, L, NProj) -> ys_hat: (B, L, Nvocab)                       
+        #ys_hat = self.ctc_lo(hs_pad)                                            
+        ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))            
+        ys_hat = ys_hat.log_softmax(2)                                          
+        # ys_hat: (B, L, Nvocab) -> (B, L, NProj)                               
+        return ys_hat
 
+    def softmax(self, hs_pad) -> torch.Tensor:
+        """softmax of frame activations
+    
         Args:
             Tensor hs_pad: 3d tensor (B, Tmax, eprojs)
         Returns:
-            torch.Tensor: log softmax applied 3d tensor (B, Tmax, odim)
+            torch.Tensor: softmax applied 3d tensor (B, Tmax, odim)
         """
         return F.softmax(self.ctc_lo(hs_pad), dim=2)
 
