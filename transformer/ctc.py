@@ -1,3 +1,18 @@
+# Copyright (c) 2020 Mobvoi Inc. (authors: Binbin Zhang, Di Wu)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Modified from ESPnet(https://github.com/espnet/espnet)
+
 import torch
 import torch.nn.functional as F
 from typeguard import check_argument_types
@@ -47,16 +62,6 @@ class CTC(torch.nn.Module):
         # Batch-size average
         loss = loss / ys_hat.size(1)
         return loss
-
-    def softmax(self, hs_pad: torch.Tensor) -> torch.Tensor:
-        """log_softmax of frame activations
-
-        Args:
-            Tensor hs_pad: 3d tensor (B, Tmax, eprojs)
-        Returns:
-            torch.Tensor: log softmax applied 3d tensor (B, Tmax, odim)
-        """
-        return F.softmax(self.ctc_lo(hs_pad), dim=2)
 
     def log_softmax(self, hs_pad: torch.Tensor) -> torch.Tensor:
         """log_softmax of frame activations
