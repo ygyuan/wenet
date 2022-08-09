@@ -250,7 +250,7 @@ def mask_finished_preds(pred: torch.Tensor, flag: torch.Tensor,
     finished = flag.repeat([1, beam_size])
     return pred.masked_fill_(finished, eos)
 
-def make_pad_mask_bucket(lengths: torch.Tensor, maxlen: int) -> torch.Tensor:   
+def make_pad_mask_bucket(lengths: torch.Tensor, maxlen: int) -> torch.Tensor:
     """Make mask tensor containing indices of padded part.                      
                                                                                 
     Args:                                                                       
@@ -264,14 +264,14 @@ def make_pad_mask_bucket(lengths: torch.Tensor, maxlen: int) -> torch.Tensor:
         masks = [[0, 0, 0, 0 ,0],                                               
                  [0, 0, 0, 1, 1],                                               
                  [0, 0, 1, 1, 1]]                                               
-    """                                                                         
-    bs = int(lengths.size(0))                                                   
+    """
+    bs = int(lengths.size(0))
     #maxlen = int(lengths.max().item())                                         
-    seq_range = torch.arange(0,                                                 
-                             maxlen,                                            
-                             dtype=torch.int64,                                 
-                             device=lengths.device)                             
-    seq_range_expand = seq_range.unsqueeze(0).expand(bs, maxlen)                
-    seq_length_expand = lengths.unsqueeze(-1)                                   
-    mask = seq_range_expand >= seq_length_expand                                
+    seq_range = torch.arange(0,
+                             maxlen,
+                             dtype=torch.int64,
+                             device=lengths.device)
+    seq_range_expand = seq_range.unsqueeze(0).expand(bs, maxlen)
+    seq_length_expand = lengths.unsqueeze(-1)
+    mask = seq_range_expand >= seq_length_expand
     return mask

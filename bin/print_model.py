@@ -20,7 +20,6 @@ import os
 import torch
 import yaml
 
-#from wenet.transformer.asr_model_mixunits import init_asr_model
 from wenet.transformer.asr_model import init_asr_model
 
 if __name__ == '__main__':
@@ -31,7 +30,7 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
     with open(args.config, 'r') as fin:
-        configs = yaml.load(fin, Loader=yaml.FullLoader)
+        configs = yaml.load(fin)
     model = init_asr_model(configs)
 
     total = 0.0

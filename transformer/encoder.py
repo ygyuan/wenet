@@ -21,8 +21,6 @@ from wenet.transformer.positionwise_feed_forward import PositionwiseFeedForward
 from wenet.transformer.subsampling import Conv2dSubsampling4
 from wenet.transformer.subsampling import Conv2dSubsampling6
 from wenet.transformer.subsampling import Conv2dSubsampling8
-from wenet.transformer.subsampling import VGGSubsampling8
-from wenet.transformer.subsampling import Conv2dSubsampling8_shortlayer
 from wenet.transformer.subsampling import LinearNoSubsampling
 from wenet.utils.common import get_activation
 from wenet.utils.mask import make_pad_mask
@@ -102,10 +100,6 @@ class BaseEncoder(torch.nn.Module):
             subsampling_class = Conv2dSubsampling6
         elif input_layer == "conv2d8":
             subsampling_class = Conv2dSubsampling8
-        elif input_layer == "vgg2d8":
-            subsampling_class = VGGSubsampling8
-        elif input_layer == "conv2d8_sl":
-            subsampling_class = Conv2dSubsampling8_shortlayer
         else:
             raise ValueError("unknown input_layer: " + input_layer)
 
@@ -251,7 +245,18 @@ class BaseEncoder(torch.nn.Module):
             r_conformer_cnn_cache.append(new_cnn_cache)
         if self.normalize_before:
             xs = self.after_norm(xs)
-
+        
+        print("cache_size:", cache_size)
+        print("xs: ", xs.size())
+        print("offset: ", offset)
+        print("required_cache_size: ", required_cache_size)
+        print("next_cache_start:", next_cache_start)
+        if subsampling_cache is not None:
+            print("subsampling_cache:", subsampling_cache.size())
+        if elayers_output_cache is not None:
+            print("elayers_output_cache:", elayers_output_cache[0].size())
+        if conformer_cnn_cache is not None:
+            print("conformer_cnn_cache:", conformer_cnn_cache[0].size())
         return (xs[:, cache_size:, :], r_subsampling_cache,
                 r_elayers_output_cache, r_conformer_cnn_cache)
 
@@ -302,6 +307,8 @@ class BaseEncoder(torch.nn.Module):
         offset = 0
         required_cache_size = decoding_chunk_size * num_decoding_left_chunks
 
+        print("subsampling %d right_context %d" % (self.embed.subsampling_rate, self.embed.right_context))
+        print("decoding_chunk_size: %d num_decoding_left_chunks: %d required_cache_size %d" % (decoding_chunk_size, num_decoding_left_chunks, required_cache_size))
         # Feed forward overlap input step by step
         for cur in range(0, num_frames - context + 1, stride):
             end = min(cur + decoding_window, num_frames)

@@ -165,11 +165,11 @@ class ConformerEncoderLayer(nn.Module):
             self.ff_scale = 0.5
         else:
             self.ff_scale = 1.0
-        #if self.conv_module is not None:
-        self.norm_conv = nn.LayerNorm(size,
-                                      eps=1e-12)  # for the CNN module
-        self.norm_final = nn.LayerNorm(
-            size, eps=1e-12)  # for the final output of the block
+        if self.conv_module is not None:
+            self.norm_conv = nn.LayerNorm(size,
+                                          eps=1e-12)  # for the CNN module
+            self.norm_final = nn.LayerNorm(
+                size, eps=1e-12)  # for the final output of the block
         self.dropout = nn.Dropout(dropout_rate)
         self.size = size
         self.normalize_before = normalize_before
@@ -241,15 +241,15 @@ class ConformerEncoderLayer(nn.Module):
         # convolution module
         # Fake new cnn cache here, and then change it in conv_module
         new_cnn_cache = torch.tensor([0.0], dtype=x.dtype, device=x.device)
-        #if self.conv_module is not None:
-        residual = x
-        if self.normalize_before:
-            x = self.norm_conv(x)
-        x, new_cnn_cache = self.conv_module(x, mask_pad, cnn_cache)
-        x = residual + self.dropout(x)
+        if self.conv_module is not None:
+            residual = x
+            if self.normalize_before:
+                x = self.norm_conv(x)
+            x, new_cnn_cache = self.conv_module(x, mask_pad, cnn_cache)
+            x = residual + self.dropout(x)
 
-        if not self.normalize_before:
-            x = self.norm_conv(x)
+            if not self.normalize_before:
+                x = self.norm_conv(x)
 
         # feed forward module
         residual = x
@@ -260,8 +260,8 @@ class ConformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.norm_ff(x)
 
-        #if self.conv_module is not None:
-        x = self.norm_final(x)
+        if self.conv_module is not None:
+            x = self.norm_final(x)
 
         if output_cache is not None:
             x = torch.cat([output_cache, x], dim=1)
@@ -315,11 +315,11 @@ class NullMHAConformerEncoderLayer(nn.Module):
             self.ff_scale = 0.5
         else:
             self.ff_scale = 1.0
-        #if self.conv_module is not None:
-        self.norm_conv = nn.LayerNorm(size,
-                                      eps=1e-12)  # for the CNN module
-        self.norm_final = nn.LayerNorm(
-            size, eps=1e-12)  # for the final output of the block
+        if self.conv_module is not None:
+            self.norm_conv = nn.LayerNorm(size,
+                                          eps=1e-12)  # for the CNN module
+            self.norm_final = nn.LayerNorm(
+                size, eps=1e-12)  # for the final output of the block
         self.dropout = nn.Dropout(dropout_rate)
         self.size = size
         self.normalize_before = normalize_before
@@ -379,7 +379,7 @@ class NullMHAConformerEncoderLayer(nn.Module):
             mask = mask[:, -chunk:, :]
 
         #x_att = self.self_attn(x_q, x, x, mask, pos_emb)
-        x_att, att_scores = self.self_attn(x, att_scores, mask)
+        x_att = self.self_attn(x, att_scores, mask)
         if self.concat_after:
             x_concat = torch.cat((x, x_att), dim=-1)
             x = residual + self.concat_linear(x_concat)
@@ -391,15 +391,15 @@ class NullMHAConformerEncoderLayer(nn.Module):
         # convolution module
         # Fake new cnn cache here, and then change it in conv_module
         new_cnn_cache = torch.tensor([0.0], dtype=x.dtype, device=x.device)
-        #if self.conv_module is not None:
-        residual = x
-        if self.normalize_before:
-            x = self.norm_conv(x)
-        x, new_cnn_cache = self.conv_module(x, mask_pad, cnn_cache)
-        x = residual + self.dropout(x)
+        if self.conv_module is not None:
+            residual = x
+            if self.normalize_before:
+                x = self.norm_conv(x)
+            x, new_cnn_cache = self.conv_module(x, mask_pad, cnn_cache)
+            x = residual + self.dropout(x)
 
-        if not self.normalize_before:
-            x = self.norm_conv(x)
+            if not self.normalize_before:
+                x = self.norm_conv(x)
 
         # feed forward module
         residual = x
@@ -410,8 +410,8 @@ class NullMHAConformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.norm_ff(x)
 
-        #if self.conv_module is not None:
-        x = self.norm_final(x)
+        if self.conv_module is not None:
+            x = self.norm_final(x)
 
         if output_cache is not None:
             x = torch.cat([output_cache, x], dim=1)

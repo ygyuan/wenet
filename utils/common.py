@@ -145,7 +145,7 @@ def get_activation(act):
         "tanh": torch.nn.Tanh,
         "relu": torch.nn.ReLU,
         "selu": torch.nn.SELU,
-        "swish": getattr(torch.nn, "SiLU", Swish),
+        "swish": Swish,
         "gelu": torch.nn.GELU
     }
 

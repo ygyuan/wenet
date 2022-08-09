@@ -107,7 +107,7 @@ class ConvolutionModule(nn.Module):
                 assert cache.size(0) == x.size(0)
                 assert cache.size(1) == x.size(1)
                 x = torch.cat((cache, x), dim=2)
-            #assert (x.size(2) > self.lorder)
+            assert (x.size(2) > self.lorder)
             new_cache = x[:, :, -self.lorder:]
         else:
             # It's better we just return None if no cache is requried,

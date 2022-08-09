@@ -11,6 +11,109 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
+class NullMultiHeadedAttention(nn.Module):
+    """Null Multi-Head Attention layer.
+
+    Args:
+        n_head (int): The number of heads.
+        n_feat (int): The number of features.
+        dropout_rate (float): Dropout rate.
+
+    """
+    def __init__(self, n_head: int, n_feat: int, dropout_rate: float):
+        """Construct an MultiHeadedAttention object."""
+        super().__init__()
+        assert n_feat % n_head == 0
+        # We assume d_v always equals d_k
+        self.d_k = n_feat // n_head
+        self.h = n_head
+        self.linear_v = nn.Linear(n_feat, n_feat)
+        self.linear_out = nn.Linear(n_feat, n_feat)
+        self.dropout = nn.Dropout(p=dropout_rate)
+
+    def forward_v(
+        self, value: torch.Tensor
+    ) -> torch.Tensor:
+        """Transform value.
+
+        Args:
+            value (torch.Tensor): Value tensor (#batch, time2, size).
+
+        Returns:
+            torch.Tensor: Transformed value tensor, size
+                (#batch, n_head, time2, d_k).
+
+        """
+        n_batch = value.size(0)
+        v = self.linear_v(value).view(n_batch, -1, self.h, self.d_k)
+        v = v.transpose(1, 2)  # (batch, head, time2, d_k)
+
+        return v
+
+    def forward_attention(self, value: torch.Tensor, scores: torch.Tensor,
+                          mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Compute attention context vector.
+
+        Args:
+            value (torch.Tensor): Transformed value, size
+                (#batch, n_head, time2, d_k).
+            scores (torch.Tensor): Attention score, size
+                (#batch, n_head, time1, time2).
+            mask (torch.Tensor): Mask, size (#batch, 1, time2) or
+                (#batch, time1, time2).
+
+        Returns:
+            torch.Tensor: Transformed value (#batch, time1, d_model)
+                weighted by the attention score (#batch, time1, time2).
+
+        """
+        n_batch = value.size(0)
+        if mask is not None:
+            mask = mask.unsqueeze(1).eq(0)  # (batch, 1, *, time2)
+            scores = scores.masked_fill(mask, -float('inf'))
+            attn = torch.softmax(scores, dim=-1).masked_fill(
+                mask, 0.0)  # (batch, head, time1, time2)
+        else:
+            attn = torch.softmax(scores, dim=-1)  # (batch, head, time1, time2)
+
+        p_attn = self.dropout(attn)
+        x = torch.matmul(p_attn, value)  # (batch, head, time1, d_k)
+        x = (x.transpose(1, 2).contiguous().view(n_batch, -1,
+                                                 self.h * self.d_k)
+             )  # (batch, time1, d_model)
+
+        return self.linear_out(x)  # (batch, time1, d_model)
+
+    def forward(self,
+                value: torch.Tensor,
+                scores: torch.Tensor,
+                mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Compute scaled dot product attention.
+
+        Args:
+            value (torch.Tensor): Value tensor (#batch, time2, size).
+            score (torch.Tensor): 
+            mask (torch.Tensor): Mask tensor (#batch, 1, time2) or
+                (#batch, time1, time2).
+                1.When applying cross attention between decoder and encoder,
+                the batch padding mask for input is in (#batch, 1, T) shape.
+                2.When applying self attention of encoder,
+                the mask is in (#batch, T, T)  shape.
+                3.When applying self attention of decoder,
+                the mask is in (#batch, L, L)  shape.
+                4.If the different position in decoder see different block
+                of the encoder, such as Mocha, the passed in mask could be
+                in (#batch, L, T) shape. But there is no such case in current
+                Wenet.
+
+
+        Returns:
+            torch.Tensor: Output tensor (#batch, time1, d_model).
+
+        """
+        v = self.forward_v(value)
+        ###scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
+        return self.forward_attention(v, scores, mask)
 
 
 class MultiHeadedAttention(nn.Module):
@@ -84,7 +187,6 @@ class MultiHeadedAttention(nn.Module):
         n_batch = value.size(0)
         if mask is not None:
             mask = mask.unsqueeze(1).eq(0)  # (batch, 1, *, time2)
-            #mask = ~(mask.unsqueeze(1))
             scores = scores.masked_fill(mask, -float('inf'))
             attn = torch.softmax(scores, dim=-1).masked_fill(
                 mask, 0.0)  # (batch, head, time1, time2)
@@ -221,119 +323,4 @@ class RelPositionMultiHeadedAttention(MultiHeadedAttention):
         scores = (matrix_ac + matrix_bd) / math.sqrt(
             self.d_k)  # (batch, head, time1, time2)
 
-        return self.forward_attention(v, scores, mask), scores
-
-
-class NullMultiHeadedAttention(MultiHeadedAttention):
-    """Null Multi-Head Attention layer.
-
-    Args:
-        n_head (int): The number of heads.
-        n_feat (int): The number of features.
-        dropout_rate (float): Dropout rate.
-
-    """
-    def __init__(self, n_head, n_feat, dropout_rate):
-        """Construct an MultiHeadedAttention object."""
-        super().__init__(n_head, n_feat, dropout_rate)
-
-    def forward_v(
-        self, value: torch.Tensor
-    ) -> torch.Tensor:
-        """Transform value.
-
-        Args:
-            value (torch.Tensor): Value tensor (#batch, time2, size).
-
-        Returns:
-            torch.Tensor: Transformed value tensor, size
-                (#batch, n_head, time2, d_k).
-
-        """
-        n_batch = value.size(0)
-        v = self.linear_v(value).view(n_batch, -1, self.h, self.d_k)
-        v = v.transpose(1, 2)  # (batch, head, time2, d_k)
-
-        return v
-
-    def forward(self,
-                value: torch.Tensor,
-                scores: torch.Tensor,
-                mask: Optional[torch.Tensor]) -> torch.Tensor:
-        """Compute scaled dot product attention.
-
-        Args:
-            value (torch.Tensor): Value tensor (#batch, time2, size).
-            score (torch.Tensor): 
-            mask (torch.Tensor): Mask tensor (#batch, 1, time2) or
-                (#batch, time1, time2).
-                1.When applying cross attention between decoder and encoder,
-                the batch padding mask for input is in (#batch, 1, T) shape.
-                2.When applying self attention of encoder,
-                the mask is in (#batch, T, T)  shape.
-                3.When applying self attention of decoder,
-                the mask is in (#batch, L, L)  shape.
-                4.If the different position in decoder see different block
-                of the encoder, such as Mocha, the passed in mask could be
-                in (#batch, L, T) shape. But there is no such case in current
-                Wenet.
-
-
-        Returns:
-            torch.Tensor: Output tensor (#batch, time1, d_model).
-
-        """
-        v = self.forward_v(value)
-        ###scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
-        return self.forward_attention(v, scores, mask)
-
-class NullRelPositionMultiHeadedAttention(MultiHeadedAttention):
-    """Multi-Head Attention layer with relative position encoding.
-    Paper: https://arxiv.org/abs/1901.02860
-    Args:
-        n_head (int): The number of heads.
-        n_feat (int): The number of features.
-        dropout_rate (float): Dropout rate.
-    """
-    def __init__(self, n_head, n_feat, dropout_rate):
-        """Construct an RelPositionMultiHeadedAttention object."""
-        super().__init__(n_head, n_feat, dropout_rate)
-
-    def forward_v(
-        self, value: torch.Tensor
-    ) -> torch.Tensor:
-        """Transform value.
-
-        Args:
-            value (torch.Tensor): Value tensor (#batch, time2, size).
-
-        Returns:
-            torch.Tensor: Transformed value tensor, size
-                (#batch, n_head, time2, d_k).
-
-        """
-        n_batch = value.size(0)
-        v = self.linear_v(value).view(n_batch, -1, self.h, self.d_k)
-        v = v.transpose(1, 2)  # (batch, head, time2, d_k)
-
-        return v
-
-    def forward(self,
-                value: torch.Tensor, 
-                scores: torch.Tensor,
-                mask: Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute 'Scaled Dot Product Attention' with rel. positional encoding.
-        Args:
-            query (torch.Tensor): Query tensor (#batch, time1, size).
-            key (torch.Tensor): Key tensor (#batch, time2, size).
-            value (torch.Tensor): Value tensor (#batch, time2, size).
-            mask (torch.Tensor): Mask tensor (#batch, 1, time2) or
-                (#batch, time1, time2).
-            pos_emb (torch.Tensor): Positional embedding tensor
-                (#batch, time2, size).
-        Returns:
-            torch.Tensor: Output tensor (#batch, time1, d_model).
-        """
-        #q, k, v = self.forward_qkv(query, key, value)
-        v = self.forward_v(value)
         return self.forward_attention(v, scores, mask), scores

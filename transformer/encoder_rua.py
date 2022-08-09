@@ -12,7 +12,6 @@ from typeguard import check_argument_types
 from wenet.transformer.attention_rua import MultiHeadedAttention
 from wenet.transformer.attention_rua import RelPositionMultiHeadedAttention
 from wenet.transformer.attention_rua import NullMultiHeadedAttention
-from wenet.transformer.attention_rua import NullRelPositionMultiHeadedAttention
 from wenet.transformer.convolution import ConvolutionModule
 from wenet.transformer.embedding import PositionalEncoding
 from wenet.transformer.embedding import RelPositionalEncoding
@@ -28,7 +27,7 @@ from wenet.transformer.subsampling import LinearNoSubsampling
 from wenet.utils.common import get_activation
 from wenet.utils.mask import make_pad_mask
 from wenet.utils.mask import add_optional_chunk_mask
-
+from wenet.utils.mask import make_pad_mask_bucket
 
 class BaseEncoder(torch.nn.Module):
     def __init__(
@@ -149,9 +148,8 @@ class BaseEncoder(torch.nn.Module):
             masks: torch.Tensor batch padding mask after subsample
                 (B, 1, T' ~= T/subsample_rate)
         """
-        #print(xs.size(), xs)
-        masks = ~make_pad_mask(xs_lens).unsqueeze(1)  # (B, 1, T)
-        #masks = xs_lens
+        #masks = ~make_pad_mask(xs_lens).unsqueeze(1)  # (B, 1, T)
+        masks = ~make_pad_mask_bucket(xs_lens, xs.size(1) ).unsqueeze(1)
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
         xs, pos_emb, masks = self.embed(xs, masks)
@@ -165,17 +163,17 @@ class BaseEncoder(torch.nn.Module):
         xs_attscore = torch.tensor([])
         cnn_cache = torch.tensor([])
         for i, layer in enumerate(self.encoders):
-            #xs, chunk_masks, _ = layer(xs, chunk_masks, pos_emb, mask_pad)
+            #print(i, layer)
             if i == 0:
                 xs, chunk_masks, xs_attscore, cnn_cache = layer(xs, chunk_masks, pos_emb, mask_pad)
             else:
                 xs, chunk_masks, xs_attscore, cnn_cache = layer(xs, chunk_masks, xs_attscore, mask_pad)
+
         if self.normalize_before:
             xs = self.after_norm(xs)
         # Here we assume the mask is not changed in encoder layers, so just
         # return the masks before encoder layers, and the masks will be used
         # for cross attention with decoder later
-        #print(xs.size(), xs)
         return xs, masks
 
     def forward_chunk(
@@ -239,7 +237,6 @@ class BaseEncoder(torch.nn.Module):
         masks = masks.unsqueeze(1)
         r_elayers_output_cache = []
         r_conformer_cnn_cache = []
-        xs_attscore = torch.tensor([])
         for i, layer in enumerate(self.encoders):
             if elayers_output_cache is None:
                 attn_cache = None
@@ -249,18 +246,11 @@ class BaseEncoder(torch.nn.Module):
                 cnn_cache = None
             else:
                 cnn_cache = conformer_cnn_cache[i]
-
-            if i == 0:                                              
-                xs, masks, xs_attscore, new_cnn_cache = layer(xs, masks, pos_emb, output_cache=attn_cache, cnn_cache=cnn_cache)
-            else:                                                               
-                xs, masks, xs_attscore, new_cnn_cache = layer(xs, masks, xs_attscore, output_cache=attn_cache, cnn_cache=cnn_cache)
-
-            #xs, _, _, new_cnn_cache = layer(xs,
-            #                             masks,
-            #                             pos_emb,
-            #                             output_cache=attn_cache,
-            #                             cnn_cache=cnn_cache)
-
+            xs, _, _, new_cnn_cache = layer(xs,
+                                         masks,
+                                         pos_emb,
+                                         output_cache=attn_cache,
+                                         cnn_cache=cnn_cache)
             r_elayers_output_cache.append(xs[:, next_cache_start:, :])
             r_conformer_cnn_cache.append(new_cnn_cache)
         if self.normalize_before:
@@ -442,7 +432,7 @@ class ConformerEncoder(BaseEncoder):
             attention_dropout_rate,
         )
 
-        encoder_nullattn_layer = NullRelPositionMultiHeadedAttention #NullMultiHeadedAttention
+        encoder_nullattn_layer = NullMultiHeadedAttention
 
         # feed-forward module definition
         positionwise_layer = PositionwiseFeedForward
@@ -458,12 +448,26 @@ class ConformerEncoder(BaseEncoder):
                                   cnn_module_norm, causal)
 
         encoderlists=[]
-        interctc=1
-        for i in range(interctc):    
+        encoderlists.append(
+            ConformerEncoderLayer(
+                output_size,
+                encoder_selfattn_layer(*encoder_selfattn_layer_args),
+                positionwise_layer(*positionwise_layer_args),
+                positionwise_layer(
+                    *positionwise_layer_args) if macaron_style else None,
+                convolution_layer(
+                    *convolution_layer_args) if use_cnn_module else None,
+                dropout_rate,
+                normalize_before,
+                concat_after,
+            )
+        )
+       
+        for _ in range(num_blocks - 1):
             encoderlists.append(
-                ConformerEncoderLayer(
+                NullMHAConformerEncoderLayer(
                     output_size,
-                    encoder_selfattn_layer(*encoder_selfattn_layer_args),
+                    encoder_nullattn_layer(*encoder_selfattn_layer_args),
                     positionwise_layer(*positionwise_layer_args),
                     positionwise_layer(
                         *positionwise_layer_args) if macaron_style else None,
@@ -472,24 +476,9 @@ class ConformerEncoder(BaseEncoder):
                     dropout_rate,
                     normalize_before,
                     concat_after,
+                    
                 )
             )
-            for j in range(int(num_blocks/interctc)-1):
-                encoderlists.append(
-                    NullMHAConformerEncoderLayer(
-                        output_size,
-                        encoder_nullattn_layer(*encoder_selfattn_layer_args),
-                        positionwise_layer(*positionwise_layer_args),
-                        positionwise_layer(
-                            *positionwise_layer_args) if macaron_style else None,
-                        convolution_layer(
-                            *convolution_layer_args) if use_cnn_module else None,
-                        dropout_rate,
-                        normalize_before,
-                        concat_after,
-
-                    )
-                )
         self.encoders = torch.nn.ModuleList(encoderlists)
 
         #self.encoders = torch.nn.ModuleList([

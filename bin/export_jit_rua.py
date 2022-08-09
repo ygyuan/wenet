@@ -38,7 +38,7 @@ if __name__ == '__main__':
     with open(args.config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
     model = init_asr_model(configs)
-    #print(model)
+    print(model)
 
     load_checkpoint(model, args.checkpoint)
     # Export jit torch script model
