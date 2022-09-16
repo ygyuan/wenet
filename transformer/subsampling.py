@@ -1,22 +1,11 @@
-# Copyright (c) 2021 Mobvoi Inc (Binbin Zhang, Di Wu)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Modified from ESPnet(https://github.com/espnet/espnet)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-
+# Copyright 2019 Mobvoi Inc. All Rights Reserved.
+# Author: di.wu@mobvoi.com (DI WU)
 """Subsampling layer definition."""
 
-from typing import Tuple, Union
+from typing import Tuple
 
 import torch
 
@@ -27,9 +16,13 @@ class BaseSubsampling(torch.nn.Module):
         self.right_context = 0
         self.subsampling_rate = 1
 
-    def position_encoding(self, offset: Union[int, torch.Tensor],
-                          size: int) -> torch.Tensor:
+    def position_encoding(self, offset: int, size: int) -> torch.Tensor:
         return self.pos_enc.position_encoding(offset, size)
+
+    # 如下代码为了能将x.size传给embedding层用于计算position encoding            
+    # 直接传x.size而不是x(Tensor)会导致onnx无法追踪                             
+    def position_encoding_onnx(self, offset: int, x) -> torch.Tensor:           
+        return self.pos_enc.position_encoding_onnx(offset, x)
 
 
 class LinearNoSubsampling(BaseSubsampling):
@@ -47,7 +40,7 @@ class LinearNoSubsampling(BaseSubsampling):
         super().__init__()
         self.out = torch.nn.Sequential(
             torch.nn.Linear(idim, odim),
-            torch.nn.LayerNorm(odim, eps=1e-5),
+            torch.nn.LayerNorm(odim, eps=1e-12),
             torch.nn.Dropout(dropout_rate),
         )
         self.pos_enc = pos_enc_class
@@ -58,7 +51,7 @@ class LinearNoSubsampling(BaseSubsampling):
             self,
             x: torch.Tensor,
             x_mask: torch.Tensor,
-            offset: Union[int, torch.Tensor] = 0
+            offset: int = 0
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Input x.
 
@@ -110,7 +103,7 @@ class Conv2dSubsampling4(BaseSubsampling):
             self,
             x: torch.Tensor,
             x_mask: torch.Tensor,
-            offset: Union[int, torch.Tensor] = 0
+            offset: int = 0
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Subsample x.
 
@@ -163,7 +156,7 @@ class Conv2dSubsampling6(BaseSubsampling):
             self,
             x: torch.Tensor,
             x_mask: torch.Tensor,
-            offset: Union[int, torch.Tensor] = 0
+            offset: int = 0
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Subsample x.
         Args:
@@ -217,7 +210,7 @@ class Conv2dSubsampling8(BaseSubsampling):
             self,
             x: torch.Tensor,
             x_mask: torch.Tensor,
-            offset: Union[int, torch.Tensor] = 0
+            offset: int = 0
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Subsample x.
 
@@ -233,7 +226,123 @@ class Conv2dSubsampling8(BaseSubsampling):
             torch.Tensor: positional encoding
         """
         x = x.unsqueeze(1)  # (b, c, t, f)
+        #print(x.size())
         x = self.conv(x)
+        #print(x.size())
+        b, c, t, f = x.size()
+        x = self.linear(x.transpose(1, 2).contiguous().view(b, t, c * f))
+        #offset = torch.tensor(offset, dtype=int)
+        x, pos_emb = self.pos_enc(x, offset)
+        return x, pos_emb, x_mask[:, :, :-2:2][:, :, :-2:2][:, :, :-2:2]
+
+class Conv2dSubsampling8_shortlayer(BaseSubsampling):
+    """Convolutional 2D subsampling (to 1/8 length).
+
+    Args:
+        idim (int): Input dimension.
+        odim (int): Output dimension.
+        dropout_rate (float): Dropout rate.
+
+    """
+    def __init__(self, idim: int, odim: int, dropout_rate: float,
+                 pos_enc_class: torch.nn.Module):
+        """Construct an Conv2dSubsampling8 object."""
+        super().__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(1, odim, 3, 2),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(odim, odim, 6, 4),
+            torch.nn.ReLU(),
+        )
+        self.linear = torch.nn.Linear(
+            odim * (((idim - 1) // 2 - 2) // 4), odim)
+        self.pos_enc = pos_enc_class
+        self.subsampling_rate = 8
+        # 12 = (3 - 1) * 1 + (6 - 1) * 2
+        self.right_context = 12
+
+    def forward(
+            self,
+            x: torch.Tensor,
+            x_mask: torch.Tensor,
+            offset: int = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Subsample x.
+
+        Args:
+            x (torch.Tensor): Input tensor (#batch, time, idim).
+            x_mask (torch.Tensor): Input mask (#batch, 1, time).
+
+        Returns:
+            torch.Tensor: Subsampled tensor (#batch, time', odim),
+                where time' = time // 8.
+            torch.Tensor: Subsampled mask (#batch, 1, time'),
+                where time' = time // 8.
+            torch.Tensor: positional encoding
+        """
+        x = x.unsqueeze(1)  # (b, c, t, f)
+        #print(x.size())
+        x = self.conv(x)
+        #print(x.size())
+        b, c, t, f = x.size()
+        x = self.linear(x.transpose(1, 2).contiguous().view(b, t, c * f))
+        x, pos_emb = self.pos_enc(x, offset)
+        return x, pos_emb, x_mask[:, :, :-2:2][:, :, :-5:4]
+
+class VGGSubsampling8(BaseSubsampling):
+    """Convolutional 2D subsampling (to 1/8 length).
+
+    Args:
+        idim (int): Input dimension.
+        odim (int): Output dimension.
+        dropout_rate (float): Dropout rate.
+
+    """
+    def __init__(self, idim: int, odim: int, dropout_rate: float,
+                 pos_enc_class: torch.nn.Module):
+        """Construct an Conv2dSubsampling8 object."""
+        super().__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(1, odim, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=3, stride=2),
+            torch.nn.Conv2d(odim, odim, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=3, stride=2),
+            torch.nn.Conv2d(odim, odim, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        self.linear = torch.nn.Linear(
+            odim * ((((idim - 1) // 2 - 1) // 2 - 1) // 2), odim)
+        self.pos_enc = pos_enc_class
+        self.subsampling_rate = 8
+        # 14 = (3 - 1) * 1 + (3 - 1) * 2 + (3 - 1) * 4
+        self.right_context = 14
+
+    def forward(
+            self,
+            x: torch.Tensor,
+            x_mask: torch.Tensor,
+            offset: int = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Subsample x.
+
+        Args:
+            x (torch.Tensor): Input tensor (#batch, time, idim).
+            x_mask (torch.Tensor): Input mask (#batch, 1, time).
+
+        Returns:
+            torch.Tensor: Subsampled tensor (#batch, time', odim),
+                where time' = time // 8.
+            torch.Tensor: Subsampled mask (#batch, 1, time'),
+                where time' = time // 8.
+            torch.Tensor: positional encoding
+        """
+        x = x.unsqueeze(1)  # (b, c, t, f)
+        #print("before: ", x.size())
+        x = self.conv(x)
+        #print("after:", x.size())
         b, c, t, f = x.size()
         x = self.linear(x.transpose(1, 2).contiguous().view(b, t, c * f))
         x, pos_emb = self.pos_enc(x, offset)

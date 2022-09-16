@@ -23,21 +23,15 @@ import yaml
 from wenet.transformer.asr_model import init_asr_model
 from wenet.utils.checkpoint import load_checkpoint
 
-
-def get_args():
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='export your script model')
     parser.add_argument('--config', required=True, help='config file')
     parser.add_argument('--checkpoint', required=True, help='checkpoint model')
-    parser.add_argument('--output_file', default=None, help='output file')
+    parser.add_argument('--output_file', required=True, help='output file')
     parser.add_argument('--output_quant_file',
                         default=None,
                         help='output quantized model file')
     args = parser.parse_args()
-    return args
-
-
-def main():
-    args = get_args()
     # No need gpu for model export
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
@@ -49,10 +43,9 @@ def main():
     load_checkpoint(model, args.checkpoint)
     # Export jit torch script model
 
-    if args.output_file:
-        script_model = torch.jit.script(model)
-        script_model.save(args.output_file)
-        print('Export model successfully, see {}'.format(args.output_file))
+    script_model = torch.jit.script(model)
+    script_model.save(args.output_file)
+    print('Export model successfully, see {}'.format(args.output_file))
 
     # Export quantized jit torch script model
     if args.output_quant_file:
@@ -64,7 +57,3 @@ def main():
         script_quant_model.save(args.output_quant_file)
         print('Export quantized model successfully, '
               'see {}'.format(args.output_quant_file))
-
-
-if __name__ == '__main__':
-    main()

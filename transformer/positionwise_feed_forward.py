@@ -1,18 +1,8 @@
-# Copyright (c) 2019 Shigeki Karita
-#               2020 Mobvoi Inc (Binbin Zhang)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+# Copyright 2019 Shigeki Karita
+#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 """Positionwise feed forward layer definition."""
 
 import torch
@@ -51,3 +41,42 @@ class PositionwiseFeedForward(torch.nn.Module):
             output tensor, (B, L, D)
         """
         return self.w_2(self.dropout(self.activation(self.w_1(xs))))
+
+class PositionwiseLowRankFeedForward(torch.nn.Module):
+    """Positionwise low rank feed forward layer.
+
+    FeedForward are appied on each position of the sequence.
+    The output dim is same with the input dim.
+
+    Args:
+        idim (int): Input dimenstion.
+        hidden_units (int): The number of hidden units.
+        dropout_rate (float): Dropout rate.
+        activation (torch.nn.Module): Activation function
+    """
+    def __init__(self,
+                 idim: int,
+                 hidden_units: int,
+                 dropout_rate: float,
+                 activation: torch.nn.Module = torch.nn.ReLU()):
+        """Construct a PositionwiseFeedForward object."""
+        super(PositionwiseLowRankFeedForward, self).__init__()
+        #self.w_1 = torch.nn.Linear(idim, hidden_units)
+        self.e_1 = torch.nn.Linear(idim, int(idim/2))
+        self.d_1 = torch.nn.Linear(int(idim/2), hidden_units)
+        self.activation = activation
+        self.dropout = torch.nn.Dropout(dropout_rate)
+        #self.w_2 = torch.nn.Linear(hidden_units, idim)
+        self.e_2 = torch.nn.Linear(hidden_units, int(idim/2))
+        self.d_2 = torch.nn.Linear(int(idim/2), idim)
+
+    def forward(self, xs: torch.Tensor) -> torch.Tensor:
+        """Forward function.
+
+        Args:
+            xs: input tensor (B, L, D)
+        Returns:
+            output tensor, (B, L, D)
+        """
+        return self.d_2(self.e_2(self.dropout(self.activation(self.d_1(self.e_1(xs))))))
+        #return self.w_2(self.dropout(self.activation(self.w_1(xs))))

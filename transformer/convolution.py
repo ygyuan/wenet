@@ -1,21 +1,11 @@
-# Copyright (c) 2020 Mobvoi Inc. (authors: Binbin Zhang, Di Wu)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Modified from ESPnet(https://github.com/espnet/espnet)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+# Copyright 2021 Mobvoi Inc. All Rights Reserved.
+# Author: di.wu@mobvoi.com (DI WU)
 """ConvolutionModule definition."""
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -91,17 +81,15 @@ class ConvolutionModule(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask_pad: torch.Tensor = torch.ones((0, 0, 0), dtype=torch.bool),
-        cache: torch.Tensor = torch.zeros((0, 0, 0)),
+        mask_pad: Optional[torch.Tensor] = None,
+        cache: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute convolution module.
         Args:
             x (torch.Tensor): Input tensor (#batch, time, channels).
-            mask_pad (torch.Tensor): used for batch padding (#batch, 1, time),
-                (0, 0, 0) means fake mask.
+            mask_pad (torch.Tensor): used for batch padding (#batch, 1, time)
             cache (torch.Tensor): left context cache, it is only
-                used in causal convolution (#batch, channels, cache_t),
-                (0, 0, 0) meas fake cache.
+                used in causal convolution
         Returns:
             torch.Tensor: Output tensor (#batch, time, channels).
         """
@@ -109,23 +97,23 @@ class ConvolutionModule(nn.Module):
         x = x.transpose(1, 2)  # (#batch, channels, time)
 
         # mask batch padding
-        if mask_pad.size(2) > 0:  # time > 0
+        if mask_pad is not None:
             x.masked_fill_(~mask_pad, 0.0)
 
         if self.lorder > 0:
-            if cache.size(2) == 0:  # cache_t == 0
+            if cache is None:
                 x = nn.functional.pad(x, (self.lorder, 0), 'constant', 0.0)
             else:
-                assert cache.size(0) == x.size(0)  # equal batch
-                assert cache.size(1) == x.size(1)  # equal channel
+                assert cache.size(0) == x.size(0)
+                assert cache.size(1) == x.size(1)
                 x = torch.cat((cache, x), dim=2)
-            assert (x.size(2) > self.lorder)
+            #assert (x.size(2) > self.lorder)
             new_cache = x[:, :, -self.lorder:]
         else:
             # It's better we just return None if no cache is requried,
             # However, for JIT export, here we just fake one tensor instead of
             # None.
-            new_cache = torch.zeros((0, 0, 0), dtype=x.dtype, device=x.device)
+            new_cache = torch.tensor([0.0], dtype=x.dtype, device=x.device)
 
         # GLU mechanism
         x = self.pointwise_conv1(x)  # (batch, 2*channel, dim)
@@ -140,7 +128,7 @@ class ConvolutionModule(nn.Module):
             x = x.transpose(1, 2)
         x = self.pointwise_conv2(x)
         # mask batch padding
-        if mask_pad.size(2) > 0:  # time > 0
+        if mask_pad is not None:
             x.masked_fill_(~mask_pad, 0.0)
 
         return x.transpose(1, 2), new_cache
