@@ -23,8 +23,7 @@ from wenet.transformer.cmvn import GlobalCMVN
 from wenet.transformer.ctc import CTC
 from wenet.transformer.decoder import (TransformerDecoder,
                                        BiTransformerDecoder)
-from wenet.transformer.encoder_rua import ConformerEncoder
-from wenet.transformer.encoder_rua import TransformerEncoder
+from wenet.transformer.encoder_rua import ConformerEncoder, TransformerEncoder
 from wenet.transformer.label_smoothing_loss import LabelSmoothingLoss
 from wenet.utils.cmvn import load_cmvn
 from wenet.utils.common import (IGNORE_ID, add_sos_eos, log_add,
@@ -320,7 +319,7 @@ class ASRModel(torch.nn.Module):
             encoder_out)  # (B, maxlen, vocab_size)
         topk_prob, topk_index = ctc_probs.topk(1, dim=2)  # (B, maxlen, 1)
         topk_index = topk_index.view(batch_size, maxlen)  # (B, maxlen)
-        mask = make_pad_mask(encoder_out_lens)  # (B, maxlen)
+        mask = make_pad_mask(encoder_out_lens, maxlen)  # (B, maxlen)
         topk_index = topk_index.masked_fill_(mask, self.eos)  # (B, maxlen)
         hyps = [hyp.tolist() for hyp in topk_index]
         scores = topk_prob.max(1)
@@ -566,40 +565,6 @@ class ASRModel(torch.nn.Module):
         """ Export interface for c++ call, return eos symbol id of the model
         """
         return self.eos
-
-    @torch.jit.export
-    def forward_encoder_chunk(
-        self,
-        xs: torch.Tensor,
-        offset: int,
-        required_cache_size: int,
-        subsampling_cache: Optional[torch.Tensor] = None,
-        elayers_output_cache: Optional[List[torch.Tensor]] = None,
-        conformer_cnn_cache: Optional[List[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor],
-               List[torch.Tensor]]:
-        """ Export interface for c++ call, give input chunk xs, and return
-            output from time 0 to current chunk.
-
-        Args:
-            xs (torch.Tensor): chunk input
-            subsampling_cache (Optional[torch.Tensor]): subsampling cache
-            elayers_output_cache (Optional[List[torch.Tensor]]):
-                transformer/conformer encoder layers output cache
-            conformer_cnn_cache (Optional[List[torch.Tensor]]): conformer
-                cnn cache
-
-        Returns:
-            torch.Tensor: output, it ranges from time 0 to current chunk.
-            torch.Tensor: subsampling cache
-            List[torch.Tensor]: attention cache
-            List[torch.Tensor]: conformer cnn cache
-
-        """
-        return self.encoder.forward_chunk(xs, offset, required_cache_size,
-                                          subsampling_cache,
-                                          elayers_output_cache,
-                                          conformer_cnn_cache)
 
     @torch.jit.export
     def ctc_activation(self, xs: torch.Tensor) -> torch.Tensor:

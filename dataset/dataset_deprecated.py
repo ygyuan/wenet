@@ -461,11 +461,11 @@ class AudioDataset(Dataset):
             # remove too lang or too short utt for both input and output
             # to prevent from out of memory
             if length > max_length or length < min_length:
-                logging.warn('ignore utterance {} feature {}'.format(
-                    data[i][0], length))
+                # logging.warn('ignore utterance {} feature {}'.format(
+                #     data[i][0], length))
                 pass
-            #elif token_length > token_max_length or token_length < token_min_length:
-            #    pass
+            elif token_length > token_max_length or token_length < token_min_length:
+                pass
             else:
                 valid_data.append(data[i])
         data = valid_data

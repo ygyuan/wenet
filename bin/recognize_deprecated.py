@@ -128,7 +128,7 @@ the future, please move to the new IO !!!
 
     # Init asr model from configs
     model = init_asr_model(configs)
-    #print(model)
+
     # Load dict
     char_dict = {}
     with open(args.dict, 'r') as fin:
@@ -151,7 +151,6 @@ the future, please move to the new IO !!!
             target = target.to(device)
             feats_lengths = feats_lengths.to(device)
             target_lengths = target_lengths.to(device)
-            #print(len(keys), feats.size())
             if args.mode == 'attention':
                 hyps, _ = model.recognize(
                     feats,
@@ -195,12 +194,11 @@ the future, please move to the new IO !!!
                 hyps = [hyp]
             for i, key in enumerate(keys):
                 content = []
-                ##print(key, hyps[i])
                 for w in hyps[i]:
                     if w == eos:
                         break
-                    content.append(char_dict[w])
                     #content += char_dict[w]
-                content = " ".join(content)
+                    content.append(char_dict[w])
+                content = " ".join(content) 
                 logging.info('{} {}'.format(key, content))
                 fout.write('{} {}\n'.format(key, content))

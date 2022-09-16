@@ -20,7 +20,6 @@ import os
 import torch
 import yaml
 
-#from wenet.transformer.asr_model_mixunits import init_asr_model
 from wenet.transformer.asr_model import init_asr_model
 
 if __name__ == '__main__':
@@ -39,6 +38,6 @@ if __name__ == '__main__':
         if name.startswith("decode")==False:
             print(name, param.shape, param.nelement())
             total += param.nelement() 
-    print("Number of encoding parameter: %.2fM" % (total/1e6))
+    print("Number of encoding parameter: %.2fM" % (total/1048576.0))
     total = sum([param.nelement() for param in model.parameters()])
-    print("Number of encoding-decoding parameter: %.2fM" % (total/1e6))
+    print("Number of encoding-decoding parameter: %.2fM" % (total/1048576.0))

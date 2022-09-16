@@ -28,7 +28,8 @@ from torch.utils.data import DataLoader
 
 from wenet.dataset.dataset_deprecated import AudioDataset, CollateFunc
 from wenet.transformer.asr_model_rua import init_asr_model
-from wenet.utils.checkpoint import load_checkpoint, save_checkpoint
+from wenet.utils.checkpoint import (load_checkpoint, save_checkpoint,
+                                    load_trained_modules)
 from wenet.utils.executor import Executor
 from wenet.utils.scheduler import WarmupLR
 
@@ -83,6 +84,15 @@ the future, please move to the new IO !!!
                         default=False,
                         help='Use automatic mixed precision training')
     parser.add_argument('--cmvn', default=None, help='global cmvn file')
+    parser.add_argument("--enc_init",
+                        default=None,
+                        type=str,
+                        help="Pre-trained model to initialize encoder")
+    parser.add_argument("--enc_init_mods",
+                        default="encoder.",
+                        type=lambda s: [str(mod) for mod in s.split(",") if s != ""],
+                        help="List of encoder modules \
+                        to initialize ,separated by a comma")
 
     args = parser.parse_args()
 
@@ -94,12 +104,13 @@ the future, please move to the new IO !!!
     print(args)
     with open(args.config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
-        #print(configs)
+
     distributed = args.world_size > 1
 
     raw_wav = configs['raw_wav']
-    print(configs['collate_conf'])
-    train_collate_func = CollateFunc(**configs['collate_conf'], raw_wav=raw_wav)
+
+    train_collate_func = CollateFunc(**configs['collate_conf'],
+                                     raw_wav=raw_wav)
 
     cv_collate_conf = copy.deepcopy(configs['collate_conf'])
     # no augmenation on cv set
@@ -167,8 +178,16 @@ the future, please move to the new IO !!!
     # Init asr model from configs
     model = init_asr_model(configs)
     print(model)
-    num_params = sum(p.numel() for p in model.parameters())
-    print('the number of model params: {}'.format(num_params))
+    total = 0.0
+    for name, param in model.named_parameters():
+        if name.startswith("decode")==False:
+            print(name, param.shape, param.nelement())
+            total += param.nelement()
+    print("Number of encoding parameter: %.2fM" % (total/1048576.0))
+    total = sum([param.nelement() for param in model.parameters()])
+    print("Number of encoding-decoding parameter: %.2fM" % (total/1048576.0))
+    #num_params = sum(p.numel() for p in model.parameters())
+    #print('the number of model params: {}'.format(num_params))
 
     # !!!IMPORTANT!!!
     # Try to export the model by script, if fails, we should refine
@@ -180,6 +199,9 @@ the future, please move to the new IO !!!
     # If specify checkpoint, load some info from checkpoint
     if args.checkpoint is not None:
         infos = load_checkpoint(model, args.checkpoint)
+    elif args.enc_init is not None:
+        logging.debug('load pretrained encoders: {}'.format(args.enc_init))
+        infos = load_trained_modules(model, args)
     else:
         infos = {}
     start_epoch = infos.get('epoch', -1) + 1
@@ -198,7 +220,8 @@ the future, please move to the new IO !!!
         assert (torch.cuda.is_available())
         # cuda model is required for nn.parallel.DistributedDataParallel
         model.cuda()
-        model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, find_unused_parameters=True)
         device = torch.device("cuda")
     else:
         use_cuda = args.gpu >= 0 and torch.cuda.is_available()
